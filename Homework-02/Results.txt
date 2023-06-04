@@ -1,0 +1,75 @@
+We ran the code separately for the three tasks as well as one time before the first task. So every description of the model is compared to the values obtained before the actual task, i.e. the values of task 1 are compared to the values of the given model without any changes, the values of task 2 are compared to the values of task 1 and finally the values of task 3 are compared to the values of task 2.
+
+
+- Objective value before task 1 : 7262.18
+
+Task 1: Pumped Hydro Storage
+- The new storage “PHS” was added  to the .csv files with its corresponding parameters
+- A new constraint “MaxStorageCapacityFunction” was introduced. This constraint states that the overall energy storage capacity must be less or equal than the maximum storage capacity.
+
+- The new objective value is 7208.875 
+    - The objective value decreases because the investment cost of phs is 0
+    - Therefore the total energy production is a lower
+    - This gives us the opportunity to store energy without further costs
+   
+
+- Installed capacity by technology
+    - We now have the option to store more energy, so we do not need the same capacity as before (capacity now is lower)
+    - This lowers our total costs
+    - Capacity changes:
+      - Less capacity from GasExtractor
+      - Very little decrease in capacity from CoalMine
+      - Less capacity from GasPowerPlant
+      - Very little decrease in capacity from CoalCHPPlant
+      - The rest stays the same
+
+- Production by technology
+    - A small share of the power production comes from phs
+
+- Storage  
+    - It is difficult to see/describe the changes on the storage since the storage plots compressed
+        - The storage level for battery is overall less than before since we now have phs available
+        - The storage capacity from battery decreases because we have phs with 0 investment costs
+
+
+
+Task 2: Storage Losses
+- A new .csv file “storagelosses.csv” was created. This file had the respective values for Battery and PHS. The file was then read in.
+- We declared the parameter “StorageLosses” with the read in file.
+- The constraint “StorageAnnualBalanceFunction” was modified as stated in the homework
+- The constraint “StorageLevelFunction” was also modified, since the new parameter describes how much energy in a storage is transfered from timestep to timestep
+
+- The new objective value is 7285.957
+    - Because of the storage losses over time we need to produce more energy, which increase our costs
+    - We switched to all battery instead of phs because of the efficiency, which has greater investment costs
+
+- Installed capacity 
+    - More GasExtractor capacity
+    - More GasPowerplant
+
+- Production
+    - A little more gas production
+    - There is no share of the power production that comes from phs 
+
+- Storage   
+    - We only use battery as storage since the efficiency is greater than phs
+
+
+Task 3: Hydrogen Storage
+- The new storage “H2Tank” was added to the .csv files with its corresponding parameters 
+
+- The new objective value is 7113.613
+    - The objective value has decreased because:
+        - We reduced the battery capacity a lot 
+        - We have less total power production and way more hydrogen production
+        - We are now using H2-Tank, which has low investment costs and no storage losses (this means we don't need as much production as in task 2)
+
+- Production
+    - Way more hydrogen production and a share of h2-tank production
+    - Less total power production
+
+- Storage
+ - We still have no phs and the capacity of the battery is very low
+ - H2-Tank is the main storage 
+    - H2-Tank has lower investment costs than battery as well as higher charge and discharge efficiency and no storage losses
+    
