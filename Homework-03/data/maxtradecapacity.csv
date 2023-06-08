@@ -1,0 +1,11 @@
+﻿region,region,fuel,value
+DE,FR,Power,0.3
+DE,DK,Power,0.3
+FR,DE,Power,0.3
+FR,UK,Power,0.3
+UK,FR,Power,0.3
+UK,NO,Power,0.3
+NO,UK,Power,0.3
+NO,DK,Power,0.3
+DK,NO,Power,0.3
+DK,DE,Power,0.3
