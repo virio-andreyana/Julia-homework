@@ -62,9 +62,6 @@ TradeDistance = readin("tradedistance.csv", default = 0, dims = 2, dir=data_dir)
 TradeCostFactor = readin("tradecostfactor.csv", dims = 1, dir=data_dir)
 TradeLossFactor = readin("tradelossfactor.csv", dims = 1, dir=data_dir)
 
-#production restriction
-ProductionCapacityRegion = readin("productioncapacity.csv", dims = 2, default = 1, dir=data_dir)
-
 # our emission limit
 EmissionLimit = 20000
 

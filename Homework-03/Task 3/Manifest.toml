@@ -172,7 +172,7 @@ version = "5.0.0"
 
 [[deps.Dashboard]]
 deps = ["Blink", "CSV", "Dash", "DataFrames", "DataStructures", "JSON3", "PlotlyJS", "UnPack"]
-path = "/Users/joshg/Desktop/Neuer Ordner/Julia-homework/Homework-03/Task 3/Dashboard"
+path = "/Users/joshg/Desktop/Wirtschaftsingenieur/EW-Mod/Homework 03/Task 3/Dashboard"
 uuid = "dcc957e4-d293-479c-a766-4ea2a166fd56"
 version = "0.1.0"
 
