@@ -1,0 +1,10 @@
+[deps]
+Blink = "ad839575-38b3-5650-b840-f874b8c74a25"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Clp = "e2554f3b-3117-50c0-817c-e040a3ddf72d"
+Dashboard = "dcc957e4-d293-479c-a766-4ea2a166fd56"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"

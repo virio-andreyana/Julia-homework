@@ -1,0 +1,17 @@
+﻿technology,value
+SolarPV,20
+CoalMine,40
+GasExtractor,40
+CoalPowerPlant,30
+GasPowerPlant,30
+CoalCHPPlant,30
+GasCHPPlant,30
+Power2Gas,20
+H2Car,15
+BEV,15
+LPGCar,15
+BiomassGenerator,40
+BECCS,30
+WindOnshore,20
+ElectricHeater,20
+WindOffshore,30
