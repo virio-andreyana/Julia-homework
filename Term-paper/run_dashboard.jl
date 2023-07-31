@@ -4,6 +4,8 @@ Pkg.activate(joinpath(@__DIR__, "."))
 
 using Dashboard
 
-result_path = joinpath(@__DIR__, "results")
+file_path = "test"
+
+result_path = joinpath(@__DIR__, "results\\$file_path")
 result = Result(result_path)
 dashboard(result)

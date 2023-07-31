@@ -63,10 +63,7 @@ TradeDistance = readin("tradedistance.csv", default = 0, dims = 2, dir=data_dir)
 TradeCostFactor = readin("tradecostfactor.csv", dims = 1, dir=data_dir)
 TradeLossFactor = readin("tradelossfactor.csv", dims = 1, dir=data_dir)
 
-# our emission limit
-EmissionLimit = 20000
-
-function prepare_run_model()
+function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, file_path)
     # instantiate a model with an optimizer
     ESM = Model(Clp.Optimizer)
 
@@ -190,53 +187,99 @@ function prepare_run_model()
     # this starts the optimization
     # the assigned solver (here Clp) will takes care of the solution algorithm
     optimize!(ESM)
+    
+    df_production = DataFrame(Containers.rowtable(value,Production; header = [:Region, :Hour, :Technology, :Fuel, :value]))
+    df_use = DataFrame(Containers.rowtable(value,Use; header = [:Region, :Hour, :Technology, :Fuel, :value]))
+    df_capacity = DataFrame(Containers.rowtable(value,Capacity; header = [:Region, :Technology, :value]))
 
-    return ESM
+    df_storage_production = DataFrame(Containers.rowtable(value,StorageDischarge; header = [:Region, :Technology, :Hour, :Fuel, :value]))
+    df_storage_charge = DataFrame(Containers.rowtable(value,StorageCharge; header = [:Region, :Technology, :Hour, :Fuel, :value]))
+    df_storage_level = DataFrame(Containers.rowtable(value,StorageLevel; header = [:Region, :Technology, :Hour, :Fuel, :value]))
+
+    df_demand = DataFrame(
+        (Region=r, Hour=h, Fuel=f, value=Demand[r,f]*DemandProfile[r,f,h]) for r in regions, f in fuels, h in hour
+    )
+
+    df_export = DataFrame(Containers.rowtable(value,Export; header = [:Hour, :From, :To, :Fuel, :value]))
+    df_import = DataFrame(Containers.rowtable(value,Import; header = [:Hour, :To, :From, :Fuel, :value]))
+
+    append!(df_use, df_storage_charge)
+    append!(df_production, df_storage_production)
+
+    # Define the path to the results directory
+    result_path = mkpath(joinpath(@__DIR__, "results\\$file_path"))
+    CSV.write(joinpath(result_path, "production.csv"), df_production)
+    CSV.write(joinpath(result_path, "use.csv"), df_use)
+    CSV.write(joinpath(result_path, "demand.csv"), df_demand)
+    CSV.write(joinpath(result_path, "capacity.csv"), df_capacity)
+    CSV.write(joinpath(result_path, "level.csv"), df_storage_level)
+    CSV.write(joinpath(result_path, "ex_import.csv"), df_import)
+    CSV.write(joinpath(result_path, "ex_export.csv"), df_export)
+
+    open(joinpath(result_path, "colors.json"), "w") do f
+        JSON3.pretty(f, JSON3.write(colors))
+        println(f)
+    end
 end
 
-ESM = prepare_run_model()
-# reading our objective value
-objective_value(ESM)
-
-# some result analysis
-value.(Production)
-value.(Capacity)
-value.(StorageEnergyCapacity)
-value.(StorageDischarge)
-value.(StorageLevel)
-value.(StorageCharge)
-value.(TotalStorageCost)
-
-df_production = DataFrame(Containers.rowtable(value,Production; header = [:Region, :Hour, :Technology, :Fuel, :value]))
-df_use = DataFrame(Containers.rowtable(value,Use; header = [:Region, :Hour, :Technology, :Fuel, :value]))
-df_capacity = DataFrame(Containers.rowtable(value,Capacity; header = [:Region, :Technology, :value]))
-
-df_storage_production = DataFrame(Containers.rowtable(value,StorageDischarge; header = [:Region, :Technology, :Hour, :Fuel, :value]))
-df_storage_charge = DataFrame(Containers.rowtable(value,StorageCharge; header = [:Region, :Technology, :Hour, :Fuel, :value]))
-df_storage_level = DataFrame(Containers.rowtable(value,StorageLevel; header = [:Region, :Technology, :Hour, :Fuel, :value]))
-
-df_demand = DataFrame(
-    (Region=r, Hour=h, Fuel=f, value=Demand[r,f]*DemandProfile[r,f,h]) for r in regions, f in fuels, h in hour
-)
-
-df_export = DataFrame(Containers.rowtable(value,Export; header = [:Hour, :From, :To, :Fuel, :value]))
-df_import = DataFrame(Containers.rowtable(value,Import; header = [:Hour, :To, :From, :Fuel, :value]))
-
-append!(df_use, df_storage_charge)
-append!(df_production, df_storage_production)
-
-
-# Define the path to the results directory
-result_path = mkpath(joinpath(@__DIR__, "results"))
-CSV.write(joinpath(result_path, "production.csv"), df_production)
-CSV.write(joinpath(result_path, "use.csv"), df_use)
-CSV.write(joinpath(result_path, "demand.csv"), df_demand)
-CSV.write(joinpath(result_path, "capacity.csv"), df_capacity)
-CSV.write(joinpath(result_path, "level.csv"), df_storage_level)
-CSV.write(joinpath(result_path, "ex_import.csv"), df_import)
-CSV.write(joinpath(result_path, "ex_export.csv"), df_export)
-
-open(joinpath(result_path, "colors.json"), "w") do f
-    JSON3.pretty(f, JSON3.write(colors))
-    println(f)
+function adjust_CO2_capture(CC_share)
+    techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
+    for t in keys(techCC)
+        OutputRatio[t,"CO2"] = CC_share*OutputRatio[techCC[t],"CO2"]
+        EmissionRatio[t] = (1-CC_share)*EmissionRatio[techCC[t]]
+    end
+    return EmissionRatio, OutputRatio
 end
+
+function adjust_investmentcost(cost_diff)
+    techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
+    for t in keys(techCC)
+        InvestmentCost[t] = cost_diff*InvestmentCost[techCC[t]]
+    end
+    return InvestmentCost
+end
+
+function investigate_scenario(CC_share,cost_diff,EmissionLimit)
+    EmissionRatio, OutputRatio = adjust_CO2_capture(CC_share)
+    InvestmentCost = adjust_investmentcost(cost_diff)
+    try
+        run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit,"CC$CC_share-Cost$cost_diff-ELimit$EmissionLimit")
+    catch
+        println("CC$CC_share-Cost$cost_diff-ELimit$EmissionLimit is infeasable")
+    end
+end
+
+function build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array)
+    for CC_share in CC_share_array
+        for cost_diff in cost_diff_array
+            for EmissionLimit in EmissionLimit_array
+                investigate_scenario(CC_share,cost_diff,EmissionLimit)
+            end
+        end
+    end
+end
+
+CC_share_array = [0.1,0.5,1]
+cost_diff_array = [1.1,1.3,1.5]
+EmissionLimit_array = [20000,10000,0]
+
+build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array)
+
+techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
+for t in keys(techCC)
+    println(0.5*EmissionRatio[techCC[t]])
+end
+
+
+#investigate_scenario(0.5,1.2,20000)
+
+# adjust the rate of carbon captured (for now: direct sequestration)
+#EmissionRatio, OutputRatio = adjust_CO2_capture(0.5)
+
+# adjust investment cost in relation to non CC tech
+#InvestmentCost = adjust_investmentcost(1.5)
+
+# our emission limit
+#EmissionLimit = 20000
+
+#run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit,"CC$CC_share-_Cost$cost_diff-_ELimit$EmissionLimit")
