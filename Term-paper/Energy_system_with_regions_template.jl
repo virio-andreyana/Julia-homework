@@ -18,8 +18,8 @@ data_dir = joinpath(@__DIR__, "data")
 ### Read in of parameters ###
 # We define our sets from the csv files
 
-technologies = readcsv("technologies.csv", dir=data_dir).technology
-fuels = readcsv("fuels.csv", dir=data_dir).fuel
+technologies = readcsv("technologies.csv", dir=data_dir).technology # CC powerplant added
+fuels = readcsv("fuels.csv", dir=data_dir).fuel # CO2 as fuel added
 hour = 1:120
 n_hour = length(hour)
 storages = readcsv("storages.csv", dir=data_dir).storage
@@ -29,11 +29,11 @@ regions = readcsv("regions.csv", dir=data_dir).region
 
 # Also, we read our input parameters via csv files
 Demand = readin("demand_regions.csv", default=0, dims=2, dir=data_dir)
-OutputRatio = readin("outputratio.csv", dims=2, dir=data_dir)
-InputRatio = readin("inputratio.csv", dims=2, dir=data_dir)
-VariableCost = readin("variablecost.csv", dims=1, dir=data_dir)
-InvestmentCost = readin("investmentcost.csv", dims=1, dir=data_dir)
-EmissionRatio = readin("emissionratio.csv", dims=1, dir=data_dir)
+OutputRatio = readin("outputratio.csv", dims=2, dir=data_dir) # CC powerplant added with CO2 as output
+InputRatio = readin("inputratio.csv", dims=2, dir=data_dir) # CC powerplant added. Same value as normal powerplants
+VariableCost = readin("variablecost.csv", dims=1, dir=data_dir) # CC powerplant added. Same value as normal powerplants
+InvestmentCost = readin("investmentcost.csv", dims=1, dir=data_dir) # CC powerplant added. Same value as normal powerplants
+EmissionRatio = readin("emissionratio.csv", dims=1, dir=data_dir) # CC powerplant added. Same value as normal powerplants
 DemandProfile = readin("demand_timeseries_regions.csv", default=1/n_hour, dims=3, dir=data_dir)
 MaxCapacity = readin("maxcapacity.csv",default=999,dims=2, dir=data_dir)
 TagDispatchableTechnology = readin("tag_dispatchabletechnology.csv",dims=1, dir=data_dir)
@@ -63,6 +63,7 @@ TradeDistance = readin("tradedistance.csv", default = 0, dims = 2, dir=data_dir)
 TradeCostFactor = readin("tradecostfactor.csv", dims = 1, dir=data_dir)
 TradeLossFactor = readin("tradelossfactor.csv", dims = 1, dir=data_dir)
 
+# This is a function to run the model from start to finish.
 function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, file_path)
     # instantiate a model with an optimizer
     ESM = Model(Clp.Optimizer)
@@ -222,6 +223,7 @@ function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, fi
     end
 end
 
+# Adjust the share of CO2 captured by the CC powerplants. Value ranges between 0 to 1. The higher the CC_share, the higher CO2 captured as 'fuel' and the lower is it's emission.
 function adjust_CO2_capture(CC_share)
     techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
     for t in keys(techCC)
@@ -231,6 +233,7 @@ function adjust_CO2_capture(CC_share)
     return EmissionRatio, OutputRatio
 end
 
+# Adjust the investement cost of CC powerplants in relation to normal powerplants. Logically it will be more expensive, hence cost_diff > 1.
 function adjust_investmentcost(cost_diff)
     techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
     for t in keys(techCC)
@@ -239,6 +242,7 @@ function adjust_investmentcost(cost_diff)
     return InvestmentCost
 end
 
+# Run the model once the EmissionRatio, OutputRatio, InvestmentCost have been adjusted. Provide also the emission limits.
 function investigate_scenario(CC_share,cost_diff,EmissionLimit)
     EmissionRatio, OutputRatio = adjust_CO2_capture(CC_share)
     InvestmentCost = adjust_investmentcost(cost_diff)
@@ -249,6 +253,7 @@ function investigate_scenario(CC_share,cost_diff,EmissionLimit)
     end
 end
 
+# interatively run scenarios in three dimensions: the share of CO2 captured by the CC powerplants, the cost factor of the CC powerplants, and the emission limits.
 function build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array)
     for CC_share in CC_share_array
         for cost_diff in cost_diff_array
@@ -263,23 +268,6 @@ CC_share_array = [0.1,0.5,1]
 cost_diff_array = [1.1,1.3,1.5]
 EmissionLimit_array = [20000,10000,0]
 
-build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array)
+build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array) # run all combination of the array
 
-techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
-for t in keys(techCC)
-    println(0.5*EmissionRatio[techCC[t]])
-end
-
-
-#investigate_scenario(0.5,1.2,20000)
-
-# adjust the rate of carbon captured (for now: direct sequestration)
-#EmissionRatio, OutputRatio = adjust_CO2_capture(0.5)
-
-# adjust investment cost in relation to non CC tech
-#InvestmentCost = adjust_investmentcost(1.5)
-
-# our emission limit
-#EmissionLimit = 20000
-
-#run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit,"CC$CC_share-_Cost$cost_diff-_ELimit$EmissionLimit")
+#investigate_scenario(0.5,1.2,20000) # run just one scenario
