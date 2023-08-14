@@ -20,6 +20,7 @@ colors = Dict(
     "Battery" => "#dad8ff",
     "PHS" => "#0d47a1",
     "H2Tank" => "#9526b7",
+    "CO2Perm" => "#b5007d",
     "Import" => "#ef7fff",
     "Export" => "#ef7fff",
     "ElectricHeater" => "#ae123a",

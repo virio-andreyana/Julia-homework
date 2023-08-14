@@ -22,7 +22,7 @@ technologies = readcsv("technologies.csv", dir=data_dir).technology # CC powerpl
 fuels = readcsv("fuels.csv", dir=data_dir).fuel # CO2 as fuel added
 hour = 1:120
 n_hour = length(hour)
-storages = readcsv("storages.csv", dir=data_dir).storage
+storages = readcsv("storages.csv", dir=data_dir).storage # CO2Perm is added as a permanent storage for CO2
 
 ### define readin for regions
 regions = readcsv("regions.csv", dir=data_dir).region
@@ -37,6 +37,7 @@ EmissionRatio = readin("emissionratio.csv", dims=1, dir=data_dir) # CC powerplan
 DemandProfile = readin("demand_timeseries_regions.csv", default=1/n_hour, dims=3, dir=data_dir)
 MaxCapacity = readin("maxcapacity.csv",default=999,dims=2, dir=data_dir)
 TagDispatchableTechnology = readin("tag_dispatchabletechnology.csv",dims=1, dir=data_dir)
+TagCCTechnology = readin("tag_cctechnology.csv",dims=1, dir=data_dir) # NEW: tag for CC technologies is added
 CapacityFactor = readin("capacity_factors_regions.csv",default=0, dims=3, dir=data_dir)
 for t in technologies
     if TagDispatchableTechnology[t] > 0
@@ -48,12 +49,12 @@ for t in technologies
     end
 end
 
-InvestmentCostStorage = readin("investmentcoststorage.csv",dims=1, dir=data_dir)
-E2PRatio = readin("e2pratio.csv",dims=1, dir=data_dir)
-StorageChargeEfficiency = readin("storagechargeefficiency.csv",dims=2, dir=data_dir)
-StorageDisChargeEfficiency = readin("storagedischargeefficiency.csv",dims=2, dir=data_dir)
-MaxStorageCapacity = readin("maxstoragecapacity.csv",default=999,dims=2, dir=data_dir)
-StorageLosses = readin("storagelosses.csv",default=1,dims=2, dir=data_dir)
+InvestmentCostStorage = readin("investmentcoststorage.csv",dims=1, dir=data_dir) # CO2Perm investment cost is 0 (similar to PHS)
+E2PRatio = readin("e2pratio.csv",dims=1, dir=data_dir) # CO2Perm E2PRatio is 1 (No throttling limit)
+StorageChargeEfficiency = readin("storagechargeefficiency.csv",dims=2, dir=data_dir) # CO2Perm assumed StorageChargeEfficiency is 1 (No CO2 losses)
+StorageDisChargeEfficiency = readin("storagedischargeefficiency.csv",dims=2, dir=data_dir) # CO2Perm assumed StorageChargeEfficiency is 0 (Cannot be pumped out again)
+MaxStorageCapacity = readin("maxstoragecapacity.csv",default=999,dims=2, dir=data_dir) # CO2Perm has regional limits (See draft paper)
+StorageLosses = readin("storagelosses.csv",default=1,dims=2, dir=data_dir) # CO2Perm assumed no CO2 losses
 
 ### Define your readin for MaxTradeCapacity
 MaxTradeCapacity= readin("maxtradecapacity.csv",default=0,dims=3, dir=data_dir)
@@ -93,21 +94,26 @@ function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, fi
         sum(Production[r,h,t,f] for t in technologies) + sum(StorageDischarge[r,s,h,f] for s in storages if StorageDisChargeEfficiency[s,f]>0) + sum(Import[h,r,rr,f]*(1 - TradeLossFactor[f]*TradeDistance[r,rr]) for rr in regions)== 
             Demand[r,f]*DemandProfile[r,f,h] + sum(Use[r,h,t,f] for t in technologies)+Curtailment[r,h,f] + sum(StorageCharge[r,s,h,f] for s in storages if StorageChargeEfficiency[s,f] > 0) + sum(Export[h,r,rr,f] for rr in regions)
     )
-
+    # NEW: CO2 captured cannot be curtailed
+    @constraint(ESM, NoCO2Curtailment[r in regions,h in hour],
+    Curtailment[r,h,"CO2"] == 0
+    )
     # calculate the total cost
     @constraint(ESM, ProductionCost[t in technologies],
         sum(Production[r,h,t,f] * VariableCost[t] for f in fuels, h in hour, r in regions) + sum(Capacity[r,t] * InvestmentCost[t] for r in regions) == TotalCost[t]
     )
-
     # limit the production by the installed capacity
-    @constraint(ESM, ProductionFuntion_disp[r in regions,h in hour, t in technologies, f in fuels;TagDispatchableTechnology[t]>0],
+    @constraint(ESM, ProductionFuntion_disp[r in regions,h in hour, t in technologies, f in fuels;TagDispatchableTechnology[t]>0 && f!="CO2"],
         OutputRatio[t,f] * Capacity[r,t] * CapacityFactor[r,t,h] >= Production[r,h,t,f]
     )
     # for variable renewables, the production needs to be always at maximum
-    @constraint(ESM, ProductionFunction_res[r in regions,h in hour, t in technologies, f in fuels; TagDispatchableTechnology[t]==0], 
+    @constraint(ESM, ProductionFunction_res[r in regions,h in hour, t in technologies, f in fuels; TagDispatchableTechnology[t]==0 && f!="CO2"], 
         OutputRatio[t,f] * Capacity[r,t] * CapacityFactor[r,t,h] == Production[r,h,t,f]
     )
-
+    # NEW: for CCtech, the production of CO2 must be proportional to its generation
+    @constraint(ESM, ProductionFunction_cc[r in regions,h in hour, t in technologies; TagCCTechnology[t]>0], 
+        Production[r,h,t,"CO2"] == OutputRatio[t,"CO2"] * (Production[r,h,t,"Power"] + Production[r,h,t,"Heat"])
+    )
     # define the use by the production
     @constraint(ESM, UseFunction[r in regions,h in hour,t in technologies, f in fuels],
         InputRatio[t,f] * sum(Production[r,h,t,ff]/OutputRatio[t,ff] for ff in fuels if OutputRatio[t,ff]>0) == Use[r,h,t,f]
@@ -144,8 +150,12 @@ function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, fi
     )
 
     # storage level for first period does not depend on previous level but we set it to 50% energy capacity
-    @constraint(ESM, StorageLevelStartFunction[r in regions,s in storages, h in hour, f in fuels; h==1 && StorageDisChargeEfficiency[s,f]>0], 
+    @constraint(ESM, StorageLevelStartFunction[r in regions,s in storages, h in hour, f in fuels; h==1 && StorageDisChargeEfficiency[s,f]>0 && s!="CO2Perm"], 
         StorageLevel[r,s,h,f] == 0.5*StorageEnergyCapacity[r,s,f]*StorageLosses[s,f] + StorageCharge[r,s,h,f]*StorageChargeEfficiency[s,f] - StorageDischarge[r,s,h,f]/StorageDisChargeEfficiency[s,f]
+    )
+    # NEW FOR CO2Perm: storage level for first period does not depend on previous level but we set it to 0 energy capacity (When multi year scenario is added, this need to be modified)
+    @constraint(ESM, StorageLevelStartFunctionC02Perm[r in regions,s in storages, h in hour, f in fuels; h==1 && StorageDisChargeEfficiency[s,f]>0 && s=="CO2Perm"], 
+     StorageLevel[r,s,h,f] == 0
     )
 
     # storage level is limited by storage capacity
@@ -158,8 +168,8 @@ function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, fi
         TotalStorageCost[s] == sum(StorageEnergyCapacity[r,s,f]*InvestmentCostStorage[s] for f in fuels, r in regions if StorageDisChargeEfficiency[s,f]>0)
     )
 
-    # storage level at the end of a year has to equal storage level at the beginning of year
-    @constraint(ESM, StorageAnnualBalanceFunction[r in regions,s in storages, f in fuels; StorageDisChargeEfficiency[s,f]>0], 
+    # storage level at the end of a year has to equal storage level at the beginning of year (With the exception of CO2Perm)
+    @constraint(ESM, StorageAnnualBalanceFunction[r in regions,s in storages, f in fuels; StorageDisChargeEfficiency[s,f]>0 && s!="CO2Perm"], 
         StorageLevel[r,s,n_hour,f] == 0.5*StorageEnergyCapacity[r,s,f]
     )
 
@@ -204,6 +214,8 @@ function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, fi
     df_export = DataFrame(Containers.rowtable(value,Export; header = [:Hour, :From, :To, :Fuel, :value]))
     df_import = DataFrame(Containers.rowtable(value,Import; header = [:Hour, :To, :From, :Fuel, :value]))
 
+    df_curtailment = DataFrame(Containers.rowtable(value,Curtailment; header = [:Region, :Hour, :Fuel, :value]))
+
     append!(df_use, df_storage_charge)
     append!(df_production, df_storage_production)
 
@@ -217,6 +229,8 @@ function run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit, fi
     CSV.write(joinpath(result_path, "ex_import.csv"), df_import)
     CSV.write(joinpath(result_path, "ex_export.csv"), df_export)
 
+    CSV.write(joinpath(result_path, "curtailment.csv"), df_curtailment)
+
     open(joinpath(result_path, "colors.json"), "w") do f
         JSON3.pretty(f, JSON3.write(colors))
         println(f)
@@ -227,7 +241,7 @@ end
 function adjust_CO2_capture(CC_share)
     techCC = Dict("GasPowerPlantCC"=>"GasPowerPlant", "CoalPowerPlantCC"=>"CoalPowerPlant", "GasCHPPlantCC"=>"GasCHPPlant", "CoalCHPPlantCC"=>"CoalCHPPlant")
     for t in keys(techCC)
-        OutputRatio[t,"CO2"] = CC_share*OutputRatio[techCC[t],"CO2"]
+        OutputRatio[t,"CO2"] = CC_share*EmissionRatio[techCC[t]] #OutputRatio[techCC[t],"CO2"]
         EmissionRatio[t] = (1-CC_share)*EmissionRatio[techCC[t]]
     end
     return EmissionRatio, OutputRatio
@@ -264,10 +278,10 @@ function build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array)
     end
 end
 
-CC_share_array = [0.1,0.5,1]
+CC_share_array = [0.6,0.8,1]
 cost_diff_array = [1.1,1.3,1.5]
 EmissionLimit_array = [20000,10000,0]
 
-build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array) # run all combination of the array
+#build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array) # run all combination of the array
 
-#investigate_scenario(0.5,1.2,20000) # run just one scenario
+investigate_scenario(0.6,1.5,10000) # run just one scenario
