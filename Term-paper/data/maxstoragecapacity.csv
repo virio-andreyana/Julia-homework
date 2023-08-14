@@ -1,6 +1,11 @@
-﻿region,storage,value
+region,storage,value
 DE,PHS,2000
 FR,PHS,1200
 DK,PHS,0
 UK,PHS,200
 NO,PHS,700
+DE,CO2Perm,9041096
+FR,CO2Perm,7808219
+DK,CO2Perm,3424658
+UK,CO2Perm,30136986
+NO,CO2Perm,18904110
