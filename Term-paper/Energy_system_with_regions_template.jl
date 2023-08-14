@@ -260,11 +260,11 @@ end
 function investigate_scenario(CC_share,cost_diff,EmissionLimit)
     EmissionRatio, OutputRatio = adjust_CO2_capture(CC_share)
     InvestmentCost = adjust_investmentcost(cost_diff)
-    #try
-    run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit,"CC$CC_share-Cost$cost_diff-ELimit$EmissionLimit")
-    #catch
-    #    println("CC$CC_share-Cost$cost_diff-ELimit$EmissionLimit is infeasable")
-    #end
+    try
+        run_model(EmissionRatio, OutputRatio, InvestmentCost, EmissionLimit,"CC$CC_share-Cost$cost_diff-ELimit$EmissionLimit")
+    catch
+        println("CC$CC_share-Cost$cost_diff-ELimit$EmissionLimit is infeasable")
+    end
 end
 
 # interatively run scenarios in three dimensions: the share of CO2 captured by the CC powerplants, the cost factor of the CC powerplants, and the emission limits.
@@ -284,4 +284,4 @@ EmissionLimit_array = [20000,10000,0]
 
 #build_all_scenarios(CC_share_array,cost_diff_array,EmissionLimit_array) # run all combination of the array
 
-investigate_scenario(0.6,1.5,0) # run just one scenario
+investigate_scenario(0.6,1.5,10000) # run just one scenario
