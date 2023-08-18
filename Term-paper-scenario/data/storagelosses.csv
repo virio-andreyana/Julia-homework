@@ -1,0 +1,5 @@
+storage,fuel,value
+Battery,Power,0.9999
+PHS,Power,0.999
+H2Tank,H2,1
+CO2Perm,CO2,1
