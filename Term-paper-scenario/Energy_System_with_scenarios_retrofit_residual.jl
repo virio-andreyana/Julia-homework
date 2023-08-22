@@ -40,6 +40,7 @@ DemandProfile = readin("demand_timeseries_regions.csv", default=1/n_hour, dims=3
 MaxCapacity = readin("maxcapacity.csv",default=999,dims=3, dir=data_dir)
 TagDispatchableTechnology = readin("tag_dispatchabletechnology.csv",dims=1, dir=data_dir)
 TagCCTechnology = readin("tag_cctechnology.csv",dims=1, dir=data_dir) # NEW: tag for CC technologies is added
+TagCCAbleTechnology = readin("tag_cc_abletechnology.csv",dims=1, dir=data_dir) # NEW: tag for CC technologies is added
 CapacityFactor = readin("capacity_factors_regions.csv",default=0, dims=3, dir=data_dir)
 for t in technologies
     if TagDispatchableTechnology[t] > 0
@@ -57,9 +58,10 @@ StorageChargeEfficiency = readin("storagechargeefficiency.csv",dims=2, dir=data_
 StorageDisChargeEfficiency = readin("storagedischargeefficiency.csv",dims=2, dir=data_dir)
 MaxStorageCapacity = readin("maxstoragecapacity.csv",default=9999,dims=3, dir=data_dir)
 StorageLosses = readin("storagelosses.csv",default=1,dims=2, dir=data_dir)
-ResidualCapacity = readin("residualcapacitylifetime.csv",default=0.0,dims=3, dir=data_dir)
+ResidualCapacityData = readin("residualcapacitylifetime.csv",default=0.0,dims=3, dir=data_dir) # Edited: now ResidualCapacity has its own lifetime
 TechnologyLifetime = readin("technologylifetime.csv", default=10,dims=1, dir=data_dir)
 
+techCC["GasPowerPlant"]
 
 ### Define your readin for MaxTradeCapacity
 MaxTradeCapacity = readin("maxtradecapacity.csv",default=0,dims=4, dir=data_dir)
@@ -117,6 +119,7 @@ ESM = Model(HiGHS.Optimizer)
 @variable(ESM,Production[year,regions,hour,technologies, fuels] >= 0)
 @variable(ESM,NewCapacity[year,regions,technologies] >=0)
 @variable(ESM,NewRetrofitCapacity[year,regions,t=technologies; TagCCTechnology[t]>0] >=0) #NEW: Add Retrofit capacity for CC
+@variable(ESM,ResidualCapacity[residual_year,regions,t=technologies] >=0) #NEW: Residual capacities are now a variable
 @variable(ESM,TotalCapacity[year,regions,technologies] >=0)
 @variable(ESM,Use[year,regions,hour,technologies, fuels] >=0)
 @variable(ESM,AnnualEmissions[year,regions,technologies])
@@ -152,20 +155,32 @@ ESM = Model(HiGHS.Optimizer)
     sum(Production[y,r,h,t,f] * VariableCost[y,t] * YearlyDifferenceMultiplier[y] / (1+DiscountRate)^(y - minimum(year)) for f in fuels, h in hour, r in regions, y in year) 
     + sum(NewCapacity[y,r,t] * InvestmentCost[y,t] / (1+DiscountRate)^(y - minimum(year)) for r in regions, y in year)
     + sum(NewRetrofitCapacity[y,r,t] * (InvestmentCost[y,t] - InvestmentCost[y,techCC[t]]) / (1+DiscountRate)^(y - minimum(year)) for r in regions, y in year if TagCCTechnology[t]>0)
-    #+ sum(ResidualCapacity[y_res,r,t] * (InvestmentCost[minimum(year),t] - InvestmentCost[minimum(year),techCC[t]]) for r in regions, y_res in residual_year if TagCCTechnology[t]>0)
+    + sum(ResidualCapacity[y_res,r,t] * (InvestmentCost[minimum(year),t] - InvestmentCost[minimum(year),techCC[t]]) for r in regions, y_res in residual_year if TagCCTechnology[t]>0)
     == TotalCost[t]
 )
 
 # calculate the total installed capacity in each year
 @constraint(ESM, TotalCapacityFunction[y in year, t in technologies, r in regions], 
     sum(NewCapacity[yy,r,t] for yy in year if yy <= y &&  yy + TechnologyLifetime[t] >= y)
-    + sum(0.9*ResidualCapacity[y_res,r,t] for y_res in residual_year if y_res <= y &&  y_res + TechnologyLifetime[t] >= y)
+    + sum(ResidualCapacity[y_res,r,t] for y_res in residual_year if y_res <= y &&  y_res + TechnologyLifetime[t] >= y)
     == TotalCapacity[y,r,t] ####################### &&  yy + TechnologyLifetime[t] > y // ; (y-1) + TechnologyLifetime[t] >= y
 )
 
 # TODO NEW: add the possibility to convert new capacity of fossil fuel powerplant into CC powerplant
 @constraint(ESM, RetrofitNewCapacityFunction[y in year, t in technologies, r in regions; TagCCTechnology[t]>0], 
     NewCapacity[y,r,techCC[t]] + NewRetrofitCapacity[y,r,t] == NewCapacity[y,r,t]
+)
+
+# TODO NEW: add the possibility to convert residual capacity of fossil fuel powerplant into CC powerplant
+@constraint(ESM, RetrofitResidualCapacityFunction[y_res in residual_year, t in technologies, r in regions; TagCCTechnology[t]>0], 
+    0.9*ResidualCapacityData[y_res,r,techCC[t]] == ResidualCapacity[y_res,r,t] + ResidualCapacity[y_res,r,techCC[t]]
+)
+
+RetrofitResidualCapacityFunction
+
+# TODO NEW: other residual capacity that are not connected with techCC remain the same
+@constraint(ESM, ResidualCapacityFunction[y_res in residual_year, t in technologies, r in regions; TagCCAbleTechnology[t]==0], 
+    0.9*ResidualCapacityData[y_res,r,t] == ResidualCapacity[y_res,r,t]
 )
 
 # limit the production by the installed capacity
@@ -222,7 +237,6 @@ ESM = Model(HiGHS.Optimizer)
 @constraint(ESM, TotalStorageCapacityFunction[y in year, s in storages, r in regions, f in fuels; StorageDisChargeEfficiency[s,f]>0],
     sum(NewStorageEnergyCapacity[yy,r,s,f] for yy in year if yy<=y) == TotalStorageEnergyCapacity[y,r,s,f]
 )
-
 
 # storage discharge is limited by storage energy capacity and E2PRatio
 @constraint(ESM, StorageDischargeFunction[y in year,r in regions,s in storages, h in hour, f in fuels; StorageDisChargeEfficiency[s,f]>0], 
@@ -312,6 +326,7 @@ df_capacity = DataFrame(Containers.rowtable(value, TotalCapacity; header = [:Yea
 df_newcapacity = DataFrame(Containers.rowtable(value, NewCapacity; header = [:Year, :Region, :Technology, :value]))
 df_annualemissions = filter(row -> row.value != 0, DataFrame(Containers.rowtable(value,AnnualEmissions; header = [:Year, :Region,:Technology, :value])))
 df_retrofitcapacity = DataFrame(Containers.rowtable(value, NewRetrofitCapacity; header = [:Year, :Region, :Technology, :value]))
+df_residualcapacity = DataFrame(Containers.rowtable(value, ResidualCapacity; header = [:Year, :Region, :Technology, :value]))
 
 df_storage_production = DataFrame(Containers.rowtable(value,StorageDischarge; header = [:Year, :Region, :Technology, :Hour, :Fuel, :value]))
 df_storage_charge = DataFrame(Containers.rowtable(value,StorageCharge; header = [:Year, :Region, :Technology, :Hour, :Fuel, :value]))
