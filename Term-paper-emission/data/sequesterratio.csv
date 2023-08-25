@@ -1,0 +1,15 @@
+technology,value
+SolarPV,0
+CoalPowerPlant,0
+CoalCHPPlant,0
+GasPowerPlant,0
+GasCHPPlant,0
+Power2Gas,0
+H2Car,0
+BEV,0
+LPGCar,0
+BECCS,1.0
+CoalPowerPlantCC,0
+CoalCHPPlantCC,0
+GasPowerPlantCC,0
+GasCHPPlantCC,0
