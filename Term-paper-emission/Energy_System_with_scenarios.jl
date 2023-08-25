@@ -228,7 +228,7 @@ RetrofitResidualCapacityFunction
 )
 
 # NEW: limit the total sequester by region
-@constraint(ESM, TotalSequesterLimitFunction,
+@constraint(ESM, TotalSequesterLimitFunction[r in regions],
     TotalSequester[r] <= TotalSequesterLimit[r]
 )
 
