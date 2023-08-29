@@ -98,9 +98,44 @@ function adjust_investmentcost(cost_diff)
     return InvestmentCost
 end
 
-EmissionRatio, SequesterRatio = adjust_CO2_capture(0.9)
+function extend_year_scenario(year_ref, year_add)
+    for y in year_add, r in regions
+        AnnualEmissionLimit[y] = AnnualEmissionLimit[year_ref]
+        for t in technologies
+            InvestmentCost[y,t] = InvestmentCost[year_ref,t]
+            VariableCost[y,t] = VariableCost[year_ref,t]
+            MaxCapacity[y,r,t] = MaxCapacity[year_ref,r,t]
+        end
+        for s in storages
+            InvestmentCostStorage[y,s] = InvestmentCostStorage[year_ref,s]
+            MaxStorageCapacity[y,r,s] = MaxStorageCapacity[year_ref,r,s]
+        end
+        for f in fuels
+            Demand[y,r,f] = Demand[year_ref,r,f]
+            for rr in regions
+                MaxTradeCapacity[y,r,rr,f] = MaxTradeCapacity[year_ref,r,rr,f]
+            end
+        end
+    end
+end
 
+function remove_cc_technologies(technologies)
+    for t in keys(techCC)
+        deleteat!(technologies, findall(x->x==t,technologies))
+    end
+    return technologies
+end
+
+
+# CC Scenario options
+# technologies = remove_cc_technologies(technologies) # if you want to remove cc tech
+EmissionRatio, SequesterRatio = adjust_CO2_capture(0.9)
 InvestmentCost = adjust_investmentcost(1.4)
+SequesterCost = 0.26 # Cost of sequestering per Ton of CO2
+
+year_add = 2060:10:2100
+extend_year_scenario(2050,year_add)
+year = minimum(year):10:maximum(year_add)
 
 # create a multiplier to weight the different years correctly
 YearlyDifferenceMultiplier = Dict()
@@ -140,6 +175,7 @@ ESM = Model(HiGHS.Optimizer)
 
 @variable(ESM,TotalEmissions >= 0)
 @variable(ESM,TotalSequester[regions] >= 0)
+@variable(ESM,TotalSequesterCost >= 0)
 
 
 ## constraints ##
@@ -175,8 +211,6 @@ ESM = Model(HiGHS.Optimizer)
 @constraint(ESM, RetrofitResidualCapacityFunction[y_res in residual_year, t in technologies, r in regions; TagCCTechnology[t]>0], 
     0.9*ResidualCapacityData[y_res,r,techCC[t]] == ResidualCapacity[y_res,r,t] + ResidualCapacity[y_res,r,techCC[t]]
 )
-
-RetrofitResidualCapacityFunction
 
 # TODO NEW: other residual capacity that are not connected with techCC remain the same
 @constraint(ESM, ResidualCapacityFunction[y_res in residual_year, t in technologies, r in regions; TagCCAbleTechnology[t]==0], 
@@ -230,6 +264,11 @@ RetrofitResidualCapacityFunction
 # NEW: limit the total sequester by region
 @constraint(ESM, TotalSequesterLimitFunction[r in regions],
     TotalSequester[r] <= TotalSequesterLimit[r]
+)
+
+# NEW: sequestering co2 has cost per ton. the value 0f 0.26 is estimated by Fabio
+@constraint(ESM, TotalSequesterCostFunction,
+    sum(TotalSequester[r] for r in regions) * SequesterCost == TotalSequesterCost
 )
 
 # installed capacity is limited by the maximum capacity
@@ -299,6 +338,7 @@ RetrofitResidualCapacityFunction
     sum(TotalCost[t] for t in technologies)
     + sum(TotalStorageCost[s] for s in storages)
     + sum(Export[y,h,r,rr,f]*TradeCostFactor[f]*TradeDistance[r,rr]  * YearlyDifferenceMultiplier[y] / (1+DiscountRate)^(y - minimum(year)) for h in hour, r in regions, rr in regions, f in fuels, y in year)
+    + TotalSequesterCost
 )
 
 # this starts the optimization
@@ -318,6 +358,7 @@ value.(StorageCharge)
 value.(TotalStorageCost)
 #sum(value.(SalvageValue))
 value.(NewRetrofitCapacity)
+value.(TotalSequester)
 
 df_production = DataFrame(Containers.rowtable(value, Production; header = [:Year, :Region, :Hour, :Technology, :Fuel, :value]))
 df_use = DataFrame(Containers.rowtable(value, Use; header = [:Year, :Region, :Hour, :Technology, :Fuel, :value]))
