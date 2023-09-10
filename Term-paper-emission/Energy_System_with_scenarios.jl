@@ -402,35 +402,43 @@ open(joinpath(result_path, "colors.json"), "w") do f
     println(f)
 end
 
-# Save the objective value
-file = open(joinpath(result_path, "objective.txt"), "w")
-println(file, string(objective_value(ESM)))
-close(file)
+function extract_string_before_bracket(s::AbstractString)
+    parts = split(s, "[")
+    return parts[1]
+end
 
-using DataFrames
+function extract_string_before_spaces(s::AbstractString)
+    parts = split(s, " ")
+    return parts[1]
+end
 
-# Create an empty DataFrame with columns "constraint" and "binding"
-df = DataFrame(constraint=String[], binding=Bool[])
-
-# Add a row to the DataFrame
-push!(df, ["production", true])
-
-# Print the DataFrame
-println(df)
-
-# What we want to achieve is to write the con that is binding and those that is not.
-# The value binding_cons is too large for us to investigate (for now)
-# We need to make this a csv file
 function binding_constraints(model, threshold=1e-8)
-    df = DataFrame(constraint=String[], binding=Bool[])
-    for (F, S) in list_of_constraint_types(model)  
+    df = DataFrame(con=String[], binding=String[])
+    for (F, S) in list_of_constraint_types(model)
         for con in all_constraints(model, F, S)
             if abs(dual(con)) > threshold
-                push!(df,[string(con),false])
+                push!(df,[string(con)," Binding"])
             else
-                push!(df,[string(con),true])
+                push!(df,[string(con)," Non-binding"])
             end
         end
     end
-    return df
+
+    df.con = map(extract_string_before_bracket, df.con)
+    df.con = map(extract_string_before_spaces, df.con)
+    df[!, :con_binding] = df.con .* df.binding
+    grouped_df = groupby(df, :con_binding)
+
+    df_counts = combine(grouped_df, nrow => :count)
+    split_columns = split.(df_counts.con_binding, " ")
+    df_counts.constraint = getindex.(split_columns, 1)
+    df_counts.binding = getindex.(split_columns, 2)
+    select!(df_counts, Not(:con_binding))
+
+    return df_counts[:, [:constraint, :binding, :count]]
 end
+
+df_objective = binding_constraints(ESM)
+
+CSV.write(joinpath(result_path, "objective.csv"), df_objective)
+
