@@ -401,3 +401,44 @@ open(joinpath(result_path, "colors.json"), "w") do f
     JSON3.pretty(f, JSON3.write(colors))
     println(f)
 end
+
+function extract_string_before_bracket(s::AbstractString)
+    parts = split(s, "[")
+    return parts[1]
+end
+
+function extract_string_before_spaces(s::AbstractString)
+    parts = split(s, " ")
+    return parts[1]
+end
+
+function binding_constraints(model, threshold=1e-8)
+    df = DataFrame(con=String[], binding=String[])
+    for (F, S) in list_of_constraint_types(model)
+        for con in all_constraints(model, F, S)
+            if abs(dual(con)) > threshold
+                push!(df,[string(con)," Binding"])
+            else
+                push!(df,[string(con)," Non-binding"])
+            end
+        end
+    end
+
+    df.con = map(extract_string_before_bracket, df.con)
+    df.con = map(extract_string_before_spaces, df.con)
+    df[!, :con_binding] = df.con .* df.binding
+    grouped_df = groupby(df, :con_binding)
+
+    df_counts = combine(grouped_df, nrow => :count)
+    split_columns = split.(df_counts.con_binding, " ")
+    df_counts.constraint = getindex.(split_columns, 1)
+    df_counts.binding = getindex.(split_columns, 2)
+    select!(df_counts, Not(:con_binding))
+
+    return df_counts[:, [:constraint, :binding, :count]]
+end
+
+df_objective = binding_constraints(ESM)
+
+CSV.write(joinpath(result_path, "objective.csv"), df_objective)
+
