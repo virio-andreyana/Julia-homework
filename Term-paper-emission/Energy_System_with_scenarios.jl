@@ -126,12 +126,20 @@ function remove_cc_technologies(technologies)
     return technologies
 end
 
+function limit_regional_sequestering(seq_share)
+    for r in regions
+        TotalSequesterLimit[r] = TotalSequesterLimit[r] * seq_share
+    end
+    return TotalSequesterLimit 
+end
+
 
 # CC Scenario options
 # technologies = remove_cc_technologies(technologies) # if you want to remove cc tech
 EmissionRatio, SequesterRatio = adjust_CO2_capture(0.9)
 InvestmentCost = adjust_investmentcost(1.4)
 SequesterCost = 0.26 # Cost of sequestering per Ton of CO2
+# TotalSequesterLimit = limit_regional_sequestering(0.5)
 
 year_add = 2060:10:2100
 extend_year_scenario(2050,year_add)
@@ -155,7 +163,6 @@ ESM = Model(HiGHS.Optimizer)
 @variable(ESM,TotalCost[technologies]>=0)
 @variable(ESM,Production[year,regions,hour,technologies, fuels] >= 0)
 @variable(ESM,NewCapacity[year,regions,technologies] >=0)
-@variable(ESM,NewRetrofitCapacity[year,regions,t=technologies; TagCCTechnology[t]>0] >=0) #NEW: Add Retrofit capacity for CC
 @variable(ESM,ResidualCapacity[residual_year,regions,t=technologies] >=0) #NEW: Residual capacities are now a variable
 @variable(ESM,TotalCapacity[year,regions,technologies] >=0)
 @variable(ESM,Use[year,regions,hour,technologies, fuels] >=0)
@@ -190,7 +197,6 @@ ESM = Model(HiGHS.Optimizer)
 @constraint(ESM, ProductionCost[t in technologies],
     sum(Production[y,r,h,t,f] * VariableCost[y,t] * YearlyDifferenceMultiplier[y] / (1+DiscountRate)^(y - minimum(year)) for f in fuels, h in hour, r in regions, y in year) 
     + sum(NewCapacity[y,r,t] * InvestmentCost[y,t] / (1+DiscountRate)^(y - minimum(year)) for r in regions, y in year)
-    + sum(NewRetrofitCapacity[y,r,t] * (InvestmentCost[y,t] - InvestmentCost[y,techCC[t]]) / (1+DiscountRate)^(y - minimum(year)) for r in regions, y in year if TagCCTechnology[t]>0)
     + sum(ResidualCapacity[y_res,r,t] * (InvestmentCost[minimum(year),t] - InvestmentCost[minimum(year),techCC[t]]) for r in regions, y_res in residual_year if TagCCTechnology[t]>0)
     == TotalCost[t]
 )
@@ -202,17 +208,12 @@ ESM = Model(HiGHS.Optimizer)
     == TotalCapacity[y,r,t] ####################### &&  yy + TechnologyLifetime[t] > y // ; (y-1) + TechnologyLifetime[t] >= y
 )
 
-# TODO NEW: add the possibility to convert new capacity of fossil fuel powerplant into CC powerplant
-@constraint(ESM, RetrofitNewCapacityFunction[y in year, t in technologies, r in regions; TagCCTechnology[t]>0], 
-    NewCapacity[y,r,techCC[t]] + NewRetrofitCapacity[y,r,t] == NewCapacity[y,r,t]
-)
-
-# TODO NEW: add the possibility to convert residual capacity of fossil fuel powerplant into CC powerplant
+# NEW: add the possibility to convert residual capacity of fossil fuel powerplant into CC powerplant
 @constraint(ESM, RetrofitResidualCapacityFunction[y_res in residual_year, t in technologies, r in regions; TagCCTechnology[t]>0], 
     0.9*ResidualCapacityData[y_res,r,techCC[t]] == ResidualCapacity[y_res,r,t] + ResidualCapacity[y_res,r,techCC[t]]
 )
 
-# TODO NEW: other residual capacity that are not connected with techCC remain the same
+# NEW: other residual capacity that are not connected with techCC remain the same
 @constraint(ESM, ResidualCapacityFunction[y_res in residual_year, t in technologies, r in regions; TagCCAbleTechnology[t]==0], 
     0.9*ResidualCapacityData[y_res,r,t] == ResidualCapacity[y_res,r,t]
 )
@@ -357,7 +358,6 @@ value.(StorageLevel)
 value.(StorageCharge)
 value.(TotalStorageCost)
 #sum(value.(SalvageValue))
-value.(NewRetrofitCapacity)
 value.(TotalSequester)
 
 df_production = DataFrame(Containers.rowtable(value, Production; header = [:Year, :Region, :Hour, :Technology, :Fuel, :value]))
@@ -366,7 +366,6 @@ df_capacity = DataFrame(Containers.rowtable(value, TotalCapacity; header = [:Yea
 df_newcapacity = DataFrame(Containers.rowtable(value, NewCapacity; header = [:Year, :Region, :Technology, :value]))
 df_annualemissions = filter(row -> row.value != 0, DataFrame(Containers.rowtable(value,AnnualEmissions; header = [:Year, :Region,:Technology, :value])))
 df_annualsequester = filter(row -> row.value != 0, DataFrame(Containers.rowtable(value,AnnualSequester; header = [:Year, :Region,:Technology, :value]))) # NEW: add sequester
-df_retrofitcapacity = DataFrame(Containers.rowtable(value, NewRetrofitCapacity; header = [:Year, :Region, :Technology, :value]))
 df_residualcapacity = DataFrame(Containers.rowtable(value, ResidualCapacity; header = [:Year, :Region, :Technology, :value]))
 
 df_storage_production = DataFrame(Containers.rowtable(value,StorageDischarge; header = [:Year, :Region, :Technology, :Hour, :Fuel, :value]))
@@ -396,7 +395,6 @@ CSV.write(joinpath(result_path, "ex_export.csv"), df_export)
 CSV.write(joinpath(result_path, "emission.csv"), df_annualemissions)
 CSV.write(joinpath(result_path, "sequester.csv"), df_annualsequester)
 CSV.write(joinpath(result_path, "newcapacity.csv"), df_newcapacity)
-CSV.write(joinpath(result_path, "retrofitcapacity.csv"), df_retrofitcapacity)
 CSV.write(joinpath(result_path, "residualcapacity.csv"), df_residualcapacity)
 
 open(joinpath(result_path, "colors.json"), "w") do f
