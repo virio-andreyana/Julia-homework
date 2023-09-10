@@ -401,3 +401,36 @@ open(joinpath(result_path, "colors.json"), "w") do f
     JSON3.pretty(f, JSON3.write(colors))
     println(f)
 end
+
+# Save the objective value
+file = open(joinpath(result_path, "objective.txt"), "w")
+println(file, string(objective_value(ESM)))
+close(file)
+
+using DataFrames
+
+# Create an empty DataFrame with columns "constraint" and "binding"
+df = DataFrame(constraint=String[], binding=Bool[])
+
+# Add a row to the DataFrame
+push!(df, ["production", true])
+
+# Print the DataFrame
+println(df)
+
+# What we want to achieve is to write the con that is binding and those that is not.
+# The value binding_cons is too large for us to investigate (for now)
+# We need to make this a csv file
+function binding_constraints(model, threshold=1e-8)
+    df = DataFrame(constraint=String[], binding=Bool[])
+    for (F, S) in list_of_constraint_types(model)  
+        for con in all_constraints(model, F, S)
+            if abs(dual(con)) > threshold
+                push!(df,[string(con),false])
+            else
+                push!(df,[string(con),true])
+            end
+        end
+    end
+    return df
+end
