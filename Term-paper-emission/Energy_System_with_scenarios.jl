@@ -71,7 +71,8 @@ TradeLossFactor = readin("tradelossfactor.csv",default=0,dims=1, dir=data_dir)
 # our emission limit
 AnnualEmissionLimit = readin("annualemissionlimit.csv",default=99999,dims=1, dir=data_dir)
 #AnnualEmissionLimit = DefaultDict(99999,)
-TotalEmissionLimit = 400000
+CO2L = 1.0
+TotalEmissionLimit = 400000 * CO2L
 DiscountRate = 0.05
 
 # our sequester limit
@@ -119,13 +120,6 @@ function extend_year_scenario(year_ref, year_add)
     end
 end
 
-function remove_cc_technologies(technologies)
-    for t in keys(techCC)
-        deleteat!(technologies, findall(x->x==t,technologies))
-    end
-    return technologies
-end
-
 function limit_regional_sequestering(seq_share)
     for r in regions
         TotalSequesterLimit[r] = TotalSequesterLimit[r] * seq_share
@@ -133,17 +127,15 @@ function limit_regional_sequestering(seq_share)
     return TotalSequesterLimit 
 end
 
-
 # CC Scenario options
-# technologies = remove_cc_technologies(technologies) # if you want to remove cc tech
 EmissionRatio, SequesterRatio = adjust_CO2_capture(0.9)
 InvestmentCost = adjust_investmentcost(1.4)
 SequesterCost = 0.26 # Cost of sequestering per Ton of CO2
 # TotalSequesterLimit = limit_regional_sequestering(0.5)
 
-year_add = 2060:10:2100
-extend_year_scenario(2050,year_add)
-year = minimum(year):10:maximum(year_add)
+#year_add = 2060:10:2100
+#extend_year_scenario(2050,year_add)
+#year = minimum(year):10:maximum(year_add)
 
 # create a multiplier to weight the different years correctly
 YearlyDifferenceMultiplier = Dict()
@@ -384,7 +376,7 @@ append!(df_production, df_storage_production)
 
 
 # Define the path to the results directory
-result_path = mkpath(joinpath(@__DIR__, "results"))
+result_path = mkpath(joinpath(@__DIR__, "results NoCC"))
 CSV.write(joinpath(result_path, "production.csv"), df_production)
 CSV.write(joinpath(result_path, "use.csv"), df_use)
 CSV.write(joinpath(result_path, "demand.csv"), df_demand)
@@ -438,7 +430,11 @@ function binding_constraints(model, threshold=1e-8)
     return df_counts[:, [:constraint, :binding, :count]]
 end
 
-df_objective = binding_constraints(ESM)
+df_binding = binding_constraints(ESM)
 
-CSV.write(joinpath(result_path, "objective.csv"), df_objective)
+CSV.write(joinpath(result_path, "binding.csv"), df_binding)
+
+file = open(joinpath(result_path, "objective.txt"), "w")
+println(file,objective_value(ESM))
+close(file)
 

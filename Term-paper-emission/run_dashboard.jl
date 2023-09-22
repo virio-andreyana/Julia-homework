@@ -2,7 +2,7 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, "."))
 # Pkg.develop(path=joinpath(@__DIR__, "Dashboard"))
 
-result_path = joinpath(@__DIR__, "results")
+result_path = joinpath(@__DIR__, "results CO2L1.0")
 result = Result(result_path)
 dashboard(result)
 
